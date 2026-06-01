@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Blur</title>
+    <!-- Use official Socket.IO CDN because Flask does not host the client file -->
+    <script src="https://cdn.socket.io/4.7.0/socket.io.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: transparent;
+        }
+
+        #blur-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none;
+            background: rgba(0,0,0,0.2); /* Slight tint to make blur more obvious */
+        }
+        
+        #blur-container.active-partial { opacity: 1; }
+        #blur-container.active-full { opacity: 1; }
+
+        /* The image feed sent from the Python backend */
+        #blur-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: fill; 
+        }
+
+        /* Alert overlay container to perfectly center the alert */
+        #alert-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .alert-box {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(255, 60, 60, 0.5);
+            padding: 2rem 4rem;
+            border-radius: 12px;
+            color: white;
+            font-family: 'Inter', -apple-system, sans-serif;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 60, 60, 0.2);
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(10px);
+        }
+
+        #blur-container.active-partial .alert-box,
+        #blur-container.active-full .alert-box {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .icon {
+            color: #ff3333;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem 0;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        p {
+            margin: 0;
+            color: #cbd5e1;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="blur-container">
+        <!-- Live blurred image stream from backend -->
+        <img id="blur-feed" src="" alt="Blurred Screen">
+        
+        <div id="alert-wrapper">
+            <div class="alert-box">
+                <svg class="icon" viewBox="0 0 24 24" width="64" height="64" stroke="currentColor" stroke-width="2" fill="none">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor"></line>
+                </svg>
+                <h1>SCREEN PROTECTED</h1>
+                <p>Unauthorized observer detected</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        const blurContainer = document.getElementById('blur-container');
+        const blurFeed = document.getElementById('blur-feed');
+        
+        // Connect directly to the Python backend to receive the fast blur frames
+        const socket = io('http://127.0.0.1:5000');
+        
+        socket.on('blur_frame', (data) => {
+            if (data && data.frame) {
+                blurFeed.src = 'data:image/jpeg;base64,' + data.frame;
+            }
+        });
+
+        // Listen for intensity updates from Electron main process
+        ipcRenderer.on('set-intensity', (event, data) => {
+            const intensity = data.intensity;
+
+            // Update UI
+            blurContainer.className = '';
+            if (intensity === 'full') {
+                blurContainer.classList.add('active-full');
+            } else if (intensity === 'partial') {
+                blurContainer.classList.add('active-partial');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "sentineleye-ai",
+  "version": "1.0.0",
+  "description": "Intelligent Shoulder Surfing Prevention System",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "electron": "^31.0.0",
+    "socket.io-client": "^4.7.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^25.0.0"
+  }
+}

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+
+# Virtual environment
+venv/
+env/
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Electron
+frontend/dist/
+frontend/out/
+
+# Database
+backend/data/sentineleye.db
+backend/data/sentineleye.db-wal
+backend/data/sentineleye.db-shm
+
+# Logs
+backend/data/logs/*.log
+
+# Captures
+backend/data/captures/
+
+# Face embeddings (sensitive data)
+backend/data/embeddings/
+
+# Model weights (downloaded at runtime)
+models/nlp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# PyInstaller
+*.spec
+
+# Torch cache
+.cache/

@@ -1,0 +1,143 @@
+.monitoring-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+    height: calc(100vh - 150px);
+}
+
+.feed-container {
+    background-color: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+}
+
+.feed-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.feed-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: var(--text-muted);
+    gap: 16px;
+}
+
+.radar-icon {
+    animation: radar-scan 4s linear infinite;
+    color: var(--accent-primary);
+    opacity: 0.5;
+}
+
+.status-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+}
+
+.threat-meter-container {
+    background: var(--bg-secondary);
+    padding: 24px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.threat-score-circle {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 8px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 32px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    transition: all 0.3s ease;
+}
+
+.level-LOW .threat-score-circle { border-color: var(--success-color); color: var(--success-color); }
+.level-MEDIUM .threat-score-circle { border-color: var(--warning-color); color: var(--warning-color); }
+.level-HIGH .threat-score-circle { border-color: var(--danger-color); color: var(--danger-color); }
+.level-CRITICAL .threat-score-circle { 
+    border-color: var(--danger-color); 
+    color: white;
+    background-color: rgba(239, 68, 68, 0.2);
+    animation: pulse-danger 1s infinite;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.info-value {
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.control-panel {
+    display: flex;
+    gap: 12px;
+}
+
+.control-panel button {
+    flex: 1;
+}
+
+.detections-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.detection-item {
+    background: var(--bg-tertiary);
+    padding: 12px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.det-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.det-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.det-type {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.det-gaze {
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
