@@ -33,31 +33,15 @@ class WindowManager:
             from ctypes import wintypes
             user32 = ctypes.windll.user32
             hwnd = user32.GetForegroundWindow()
-            if not hwnd:
-                return None
-                
-            # Exclude based on window title
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length == 0:
-                # Ignore empty windows (e.g. some overlays or system workers)
-                return None
-                
-            buf = ctypes.create_unicode_buffer(length + 1)
-            user32.GetWindowTextW(hwnd, buf, length + 1)
-            title = buf.value.lower()
-            
-            # CRITICAL: Prevent SentinelEye from targeting itself or its blur overlay
-            if 'sentineleye' in title or 'privacy blur' in title:
-                return None
-
-            rect = wintypes.RECT()
-            if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-                return {
-                    'x': rect.left,
-                    'y': rect.top,
-                    'w': rect.right - rect.left,
-                    'h': rect.bottom - rect.top
-                }
+            if hwnd:
+                rect = wintypes.RECT()
+                if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                    return {
+                        'x': rect.left,
+                        'y': rect.top,
+                        'w': rect.right - rect.left,
+                        'h': rect.bottom - rect.top
+                    }
         except Exception as e:
             logger.error(f"Failed to get window bounds: {e}")
         return None

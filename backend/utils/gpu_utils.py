@@ -16,18 +16,8 @@ def get_gpu_info():
         if info['pytorch_cuda']:
             info['has_cuda'] = True
             info['device_name'] = torch.cuda.get_device_name(0)
-            mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-            allocated_mb = torch.cuda.memory_allocated(0) / 1e6
-            reserved_mb = torch.cuda.memory_reserved(0) / 1e6
-            
-            # RTX 2050 has 4GB, usable is typically ~3.5GB due to OS overhead
-            usable_gb = mem_gb * 0.85 
-            
-            info['details'] += f"\nGPU: {info['device_name']}\n"
-            info['details'] += f"Total VRAM: {mem_gb:.1f} GB\n"
-            info['details'] += f"Estimated usable: ~{usable_gb:.1f} GB\n"
-            info['details'] += f"Current AI allocation: {allocated_mb:.1f} MB\n"
-            info['details'] += f"Reserved: {reserved_mb:.1f} MB\n"
+            mem = torch.cuda.get_device_properties(0).total_memory / 1e9
+            info['details'] += f"PyTorch uses: {info['device_name']} ({mem:.1f} GB). "
     except ImportError:
         logger.warning("PyTorch not installed.")
         

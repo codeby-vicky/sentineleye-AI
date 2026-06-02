@@ -9,7 +9,6 @@ class ObserverData:
     gaze_score: float
     persistence_seconds: float
     behavior_score: float
-    holding_phone: bool = False
 
 @dataclass
 class ThreatResult:
@@ -33,8 +32,24 @@ class ThreatCalculator:
             
         factors = []
         
-        # Remove sensitivity scaling base - we rely purely on behavior now
-        sens_score = 0.0
+        # Base factor: Screen Sensitivity
+        sensitivity_scores = {
+            'safe': 0.0,
+            'personal': 0.4,
+            'confidential': 0.7,
+            'highly_confidential': 1.0
+        }
+        sens_score = sensitivity_scores.get(screen_sensitivity, 0.0)
+        
+        from database.db import db
+        settings = db.get_all_settings()
+        privacy_mode = settings.get('privacy_sensitivity', 'medium')
+        
+        # Adjust screen sensitivity score based on privacy mode
+        if privacy_mode == 'aggressive':
+            sens_score = max(sens_score + 0.3, 1.0)
+        elif privacy_mode == 'low':
+            sens_score = max(sens_score - 0.2, 0.0)
             
         # Calculate max threat from all observers
         max_observer_threat = 0.0
@@ -68,7 +83,7 @@ class ThreatCalculator:
                 
             if obs_threat > max_observer_threat:
                 max_observer_threat = obs_threat
-                primary_reason = f"{obs.identity_type.capitalize()} observer detected"
+                primary_reason = f"{obs.identity_type.capitalize()} observer + {screen_sensitivity} content"
                 if g_score > 0.6:
                     primary_reason += " + sustained gaze"
                     
@@ -82,42 +97,32 @@ class ThreatCalculator:
         # Final score scaling
         final_score = min(max_observer_threat * 100.0, 100.0)
         
-        # Smart Privacy Blur Logic (Behavioral Validation)
+        # Smart Privacy Blur Logic
         for obs in observers:
             if obs.identity_type == 'unknown':
+                # Check for strict blur triggers
                 facing_screen = obs.gaze_score > 0.6
-                persistence = obs.persistence_seconds
+                standing_long_enough = obs.persistence_seconds > 2.0
                 
-                # Phone Capture Risk (Highest Priority)
-                if obs.holding_phone and facing_screen:
+                is_sensitive = (screen_sensitivity in ['confidential', 'highly_confidential'])
+                if privacy_mode == 'aggressive':
+                    is_sensitive = True
+                elif privacy_mode == 'low':
+                    is_sensitive = (screen_sensitivity == 'highly_confidential')
+                
+                if facing_screen and standing_long_enough and is_sensitive:
                     final_score = max(final_score, self.thresholds['CRITICAL'])
-                    primary_reason = "Potential screen capture risk detected"
-                elif obs.holding_phone:
-                    final_score = max(final_score, self.thresholds['HIGH'])
-                    primary_reason = "Unknown Person Holding Phone"
-                    
-                # Case 1: Fast Crossing
-                elif persistence < 1.5 and not facing_screen:
-                    # Treat as crossing/low priority
-                    final_score = min(final_score, self.thresholds['MEDIUM'] - 1)
-                    if final_score < self.thresholds['LOW'] + 5:
-                        final_score = max(final_score, 10.0)
-                        primary_reason = "Observer crossing behind (ignored)"
-                
-                # Case 2: Standing Behind User & Facing Screen
-                elif facing_screen and persistence > 1.0:
+                    primary_reason = f"Screen Watching on Sensitive Content ({screen_sensitivity})"
+                elif facing_screen:
                     final_score = max(final_score, self.thresholds['HIGH'])
                     primary_reason = "Unknown Person Facing Monitor"
-                
-                # Case 3: Slow Walking / Lingering
-                elif persistence > 2.5:
+                elif standing_long_enough:
                     final_score = max(final_score, self.thresholds['MEDIUM'])
-                    primary_reason = "Unknown Person Lingering Behind"
-                    
+                    primary_reason = "Unknown Person Standing Behind"
             elif obs.identity_type == 'crossing':
                 if final_score < self.thresholds['LOW'] + 5:
                     final_score = max(final_score, 10.0)
-                    primary_reason = "Observer crossing behind (ignored)"
+                    primary_reason = "Observer Crossing Detected"
         
         # Determine Level
         level = 'LOW'

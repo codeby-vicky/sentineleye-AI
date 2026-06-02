@@ -1,6 +1,4 @@
 import os
-import os
-os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 import sys
 
 # Ensure backend directory is in path

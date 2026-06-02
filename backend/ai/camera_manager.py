@@ -22,16 +22,42 @@ class CameraManager:
         self.lock = threading.Lock()
         self.resolution = (1920, 1080)
         self.is_running = False
+        self.locked_index = None
         self._initialized = True
+        
+    def _is_phone_camera(self, name: str) -> bool:
+        """Check if a camera name suggests it is a phone or virtual camera."""
+        if not name:
+            return False
+        name_lower = name.lower()
+        heuristics = ['droidcam', 'oppo', 'phone', 'virtual', 'ip webcam', 'obs', 'xsplit']
+        return any(h in name_lower for h in heuristics)
+
+    def _get_best_camera_index(self, requested_index: int) -> int:
+        """Find the best camera, avoiding phone webcams if possible."""
+        # This is a basic enumeration. On Windows, cv2.videoCaptureProps doesn't easily yield names
+        # without CAP_DSHOW, but we will try. If requested is 0, we'll try 0-3 and pick the first
+        # that opens and isn't a phone.
+        # However, for simplicity and safety, we just use the requested index unless it's obviously bad.
+        # Real robust camera enumeration requires directshow/WMI which is complex.
+        return requested_index
         
     def open(self, camera_index: int = 0, resolution: Tuple[int, int] = (1920, 1080)) -> bool:
         """Open the camera with the specified resolution."""
         with self.lock:
+            # If we are already open on this exact index, DO NOT reopen!
+            if self.is_running and self.cap is not None and self.cap.isOpened() and self.locked_index == camera_index:
+                logger.info(f"Camera {camera_index} is already open and locked. Reusing handle.")
+                return True
+                
             if self.cap is not None and self.cap.isOpened():
+                logger.info(f"Releasing previous camera index {self.locked_index} to open {camera_index}")
                 self.cap.release()
+                self.is_running = False
                 
             logger.info(f"Opening camera {camera_index} at {resolution}")
             
+            # Prioritize standard MSMF over DirectShow for Windows default webcams
             backends = [cv2.CAP_MSMF, cv2.CAP_DSHOW, cv2.CAP_ANY]
             for backend in backends:
                 self.cap = cv2.VideoCapture(camera_index, backend)
@@ -54,6 +80,7 @@ class CameraManager:
             self.resolution = (actual_w, actual_h)
             logger.info(f"Camera opened successfully. Actual resolution: {actual_w}x{actual_h}")
             
+            self.locked_index = camera_index
             self.is_running = True
             return True
             
@@ -76,6 +103,7 @@ class CameraManager:
                 self.cap.release()
                 self.cap = None
             self.is_running = False
+            self.locked_index = None
             logger.info("Camera released")
 
     @staticmethod

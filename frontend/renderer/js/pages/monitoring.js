@@ -98,9 +98,14 @@ const monitoringModule = {
                 window.notify.success('Monitoring started');
                 // Auto-minimize after a brief delay
                 if (window.system && window.system.minimize) {
-                    setTimeout(() => {
-                        window.system.minimize();
-                    }, 1500);
+                    setTimeout(async () => {
+                        try {
+                            const settingsResponse = await window.apiService.get('/settings');
+                            if (settingsResponse.settings && settingsResponse.settings['auto_minimize'] === 'true') {
+                                window.system.minimize();
+                            }
+                        } catch(e) {}
+                    }, 1000);
                 }
             }
             this.isMonitoring = !this.isMonitoring;

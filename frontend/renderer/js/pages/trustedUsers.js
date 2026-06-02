@@ -164,7 +164,7 @@ const trustedUsersModule = {
         
         if (img && data.frame) {
             img.style.display = 'block';
-            img.src = \`data:image/jpeg;base64,\${data.frame}\`;
+            img.src = `data:image/jpeg;base64,${data.frame}`;
             if (loading) loading.style.display = 'none';
         }
     },

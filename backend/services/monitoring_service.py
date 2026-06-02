@@ -65,7 +65,7 @@ class MonitoringService:
         self.gaze_estimator = None
         self.motion_detector = None
         self.person_tracker = None
-        self.yolo_detector = None
+        self.object_detector = None
         
         self.screen_capture = None
         self.text_extractor = None
@@ -93,12 +93,12 @@ class MonitoringService:
                 from ai.face_recognizer import FaceRecognizer
                 from ai.gaze_estimator import GazeEstimator
                 from ai.person_tracker import PersonTracker
-                from ai.yolo_detector import YoloDetector
+                from ai.object_detector import ObjectDetector
                 self.face_detector = FaceDetector()
                 self.face_recognizer = FaceRecognizer()
                 self.gaze_estimator = GazeEstimator()
                 self.person_tracker = PersonTracker()
-                self.yolo_detector = YoloDetector()
+                self.object_detector = ObjectDetector()
             except Exception as e:
                 logger.error(f"Error loading core CV modules: {e}")
                 
@@ -192,20 +192,12 @@ class MonitoringService:
         }
         
     def get_feed(self) -> Dict[str, Any]:
-        def convert_np(obj):
-            if isinstance(obj, np.integer): return int(obj)
-            elif isinstance(obj, np.floating): return float(obj)
-            elif isinstance(obj, np.ndarray): return obj.tolist()
-            elif isinstance(obj, dict): return {k: convert_np(v) for k, v in obj.items()}
-            elif isinstance(obj, (list, tuple)): return [convert_np(x) for x in obj]
-            return obj
-            
-        return convert_np({
+        return {
             'frame': self.camera.frame_to_base64(self.last_annotated_frame, quality=60),
             'detections': self.last_detections,
             'threat_score': self.current_threat_score,
             'threat_level': self.current_threat_level
-        })
+        }
 
     def _draw_annotations(self, frame: np.ndarray, tracks: list):
         """Draw bounding boxes and labels on the frame for the UI."""
@@ -238,10 +230,8 @@ class MonitoringService:
         """Main monitoring background thread."""
         logger.info("Monitoring loop started")
         
-        last_settings_time = 0
-        target_fps = 30
-        base_ocr_interval = 5.0
-        ocr_interval = base_ocr_interval
+        settings = db.get_all_settings()
+        ocr_interval = float(settings.get('ocr_interval', '5.0'))
         
         while self.is_running:
             try:
@@ -252,13 +242,6 @@ class MonitoringService:
                     
                 self.last_frame = frame
                 current_time = time.time()
-                
-                # Reload settings periodically (every 5 seconds) to apply user changes without restart
-                if current_time - last_settings_time > 5.0:
-                    settings = db.get_all_settings()
-                    base_ocr_interval = float(settings.get('ocr_interval', '5.0'))
-                    target_fps = int(settings.get('target_fps', '30'))
-                    last_settings_time = current_time
                 
                 # 1. OCR + NLP Analysis (Periodic)
                 if current_time - self.last_ocr_time > ocr_interval and self.screen_capture and self.text_extractor and self.sensitivity_classifier:
@@ -279,11 +262,28 @@ class MonitoringService:
                     finally:
                         self.last_ocr_time = current_time
                     
-                # 2. YOLO Human Filter & Phone Detection
-                persons = []
-                phones = []
-                if self.yolo_detector:
-                    persons, phones = self.yolo_detector.detect(frame)
+                # 2. Object Detection (Pre-filter)
+                obj_results = {'persons': [], 'phones': []}
+                # Run YOLO every 3rd frame to save CPU
+                if self.object_detector and getattr(self, '_frame_count', 0) % 3 == 0:
+                    obj_results = self.object_detector.detect(frame)
+                    self._last_obj_results = obj_results
+                elif hasattr(self, '_last_obj_results'):
+                    obj_results = self._last_obj_results
+                    
+                self._frame_count = getattr(self, '_frame_count', 0) + 1
+                
+                # 3. Face Detection
+                faces = []
+                if self.face_detector:
+                    all_faces = self.face_detector.detect(frame)
+                    # Filter faces: only keep if inside a YOLO person bbox (or if no persons detected)
+                    if self.object_detector:
+                        for face in all_faces:
+                            if self.object_detector.is_face_in_person(face.bbox, obj_results['persons']):
+                                faces.append(face)
+                    else:
+                        faces = all_faces
                 
                 # 3. Motion/Crossing Detection
                 motion_blobs = []
@@ -292,79 +292,50 @@ class MonitoringService:
                     motion_blobs = self.motion_detector.detect_motion(frame)
                     is_crossing = self.motion_detector.is_crossing(frame.shape[1], current_time)
                 
-                # 4. Face Detection (Run on whole frame for speed)
-                faces = []
-                if self.face_detector and len(persons) > 0:
-                    faces = self.face_detector.detect(frame)
-                
-                # 5. Identify, Estimate Gaze, and Associate Phones
+                # 4. Identify and Estimate Gaze
                 frame_detections = []
-                for person in persons:
-                    px, py, pw, ph = person['bbox']
-                    
-                    # Determine if holding phone (phone center or intersection is within/near person)
-                    holding_phone = False
-                    for phone in phones:
-                        hx, hy, hw, hh = phone['bbox']
-                        # Expanded bounding box intersection to catch phones slightly outside
-                        if max(px-20, hx) < min(px+pw+20, hx+hw) and max(py-20, hy) < min(py+ph+20, hy+hh):
-                            # Practical geometry: Is phone held up high (near face/chest) vs down low (pocket/waist)?
-                            # If phone's center Y is in the upper 60% of the person's bounding box, they are holding it up to shoot.
-                            p_center_y = hy + hh/2
-                            if p_center_y < py + ph * 0.6:
-                                holding_phone = True
-                                break
-                            
-                    # Find a face that belongs to this person
-                    best_face = None
-                    for face in faces:
-                        fx, fy, fw, fh = face.bbox
-                        # Face center
-                        f_cx, f_cy = fx + fw/2, fy + fh/2
-                        if px - 20 <= f_cx <= px + pw + 20 and py - 20 <= f_cy <= py + ph + 20:
-                            best_face = face
-                            break
-                            
+                for face in faces:
                     identity = "Unknown"
                     id_type = "unknown"
                     confidence = 0.0
-                    g_score = 0.0
                     
-                    if best_face:
-                        if self.face_recognizer:
-                            identity, id_type, confidence = self.face_recognizer.identify(frame, best_face.bbox)
-                        
-                        if self.gaze_estimator:
-                            gaze_res = self.gaze_estimator.estimate(frame, best_face.bbox)
-                            if gaze_res:
-                                g_score = gaze_res.gaze_score
-                                if gaze_res.landmarks:
-                                    import mediapipe as mp
-                                    mp_face_mesh = mp.solutions.face_mesh
-                                    connections_to_draw = [
-                                        mp_face_mesh.FACEMESH_LIPS, mp_face_mesh.FACEMESH_LEFT_EYE,
-                                        mp_face_mesh.FACEMESH_LEFT_EYEBROW, mp_face_mesh.FACEMESH_RIGHT_EYE,
-                                        mp_face_mesh.FACEMESH_RIGHT_EYEBROW, mp_face_mesh.FACEMESH_FACE_OVAL
-                                    ]
-                                    for connection_set in connections_to_draw:
-                                        for source_idx, target_idx in connection_set:
-                                            if source_idx < len(gaze_res.landmarks) and target_idx < len(gaze_res.landmarks):
-                                                pt1 = gaze_res.landmarks[source_idx]
-                                                pt2 = gaze_res.landmarks[target_idx]
-                                                cv2.line(frame, pt1, pt2, (0, 255, 0), 1)
-                                                
+                    if self.face_recognizer:
+                        identity, id_type, confidence = self.face_recognizer.identify(frame, face.bbox)
+                    
                     # Override type if it's a fast crossing event
                     if is_crossing and id_type == 'unknown':
                         id_type = 'crossing'
                         self.stats['crossing_count'] += 1
                         
+                    g_score = 0.0
+                    if self.gaze_estimator:
+                        gaze_res = self.gaze_estimator.estimate(frame, face.bbox)
+                        if gaze_res:
+                            g_score = gaze_res.gaze_score
+                            if gaze_res.landmarks:
+                                import mediapipe as mp
+                                mp_face_mesh = mp.solutions.face_mesh
+                                connections_to_draw = [
+                                    mp_face_mesh.FACEMESH_LIPS,
+                                    mp_face_mesh.FACEMESH_LEFT_EYE,
+                                    mp_face_mesh.FACEMESH_LEFT_EYEBROW,
+                                    mp_face_mesh.FACEMESH_RIGHT_EYE,
+                                    mp_face_mesh.FACEMESH_RIGHT_EYEBROW,
+                                    mp_face_mesh.FACEMESH_FACE_OVAL
+                                ]
+                                for connection_set in connections_to_draw:
+                                    for source_idx, target_idx in connection_set:
+                                        if source_idx < len(gaze_res.landmarks) and target_idx < len(gaze_res.landmarks):
+                                            pt1 = gaze_res.landmarks[source_idx]
+                                            pt2 = gaze_res.landmarks[target_idx]
+                                            cv2.line(frame, pt1, pt2, (0, 255, 0), 1)
+                            
                     frame_detections.append({
-                        'bbox': person['bbox'], # Track full human body, not just face!
+                        'bbox': face.bbox,
                         'identity': identity,
                         'type': id_type,
                         'confidence': confidence,
-                        'gaze_score': g_score,
-                        'holding_phone': holding_phone
+                        'gaze_score': g_score
                     })
                     
                 # Enforce Single Owner Rule
@@ -375,7 +346,7 @@ class MonitoringService:
                         d['identity'] = 'Unknown'
                         d['type'] = 'unknown'
                     
-                # 6. Track Persons
+                # 5. Track Persons
                 active_tracks = []
                 if self.person_tracker:
                     active_tracks = self.person_tracker.update(frame_detections, current_time)
@@ -394,8 +365,7 @@ class MonitoringService:
                         'type': t.identity_type,
                         'bbox': t.bbox,
                         'gaze_score': t.avg_gaze_score,
-                        'persistence': t.persistence_seconds,
-                        'holding_phone': getattr(t, 'holding_phone', False)
+                        'persistence': t.persistence_seconds
                     })
                     
                     behavior_score = self.behavior_analyzer.analyze(t)
@@ -405,8 +375,7 @@ class MonitoringService:
                         identity_type=t.identity_type,
                         gaze_score=t.avg_gaze_score,
                         persistence_seconds=t.persistence_seconds,
-                        behavior_score=behavior_score,
-                        holding_phone=getattr(t, 'holding_phone', False)
+                        behavior_score=behavior_score
                     ))
                     
                 # Annotate frame
@@ -414,6 +383,14 @@ class MonitoringService:
                 
                 # 6. Calculate Threat
                 threat = self.threat_calculator.calculate(observer_data_list, self.current_sensitivity, self.current_window_title)
+                
+                # Phone detection threat escalation
+                if obj_results.get('phones') and len(obj_results['phones']) > 0:
+                    # If we see a phone and any unknown person is looking at the screen, escalate
+                    unknown_observers = [o for o in observer_data_list if o.identity_type == 'unknown' and o.gaze_score > 0.5]
+                    if unknown_observers:
+                        threat.score = min(100.0, threat.score + 35.0)
+                        threat.reason = "Suspicious Device (Phone) Detected near Unknown Observer"
                 
                 # Smoothing threat score (prevent flickering)
                 self.current_threat_score = self.current_threat_score * 0.7 + threat.score * 0.3
@@ -428,16 +405,6 @@ class MonitoringService:
                 else:
                     new_level = 'LOW'
                     
-                # Threat Hysteresis (Smoothing)
-                # Maintain elevated threat state for 3 seconds to prevent UI/blur flickering
-                if new_level != 'LOW':
-                    self.last_elevated_threat_time = current_time
-                    self.elevated_threat_level = new_level
-                else:
-                    if current_time - getattr(self, 'last_elevated_threat_time', 0.0) < 3.0:
-                        new_level = getattr(self, 'elevated_threat_level', 'LOW')
-                        threat.level = new_level
-                    
                 level_changed = new_level != self.current_threat_level
                 self.current_threat_level = new_level
                 
@@ -446,7 +413,7 @@ class MonitoringService:
                 
                 # 7. Defense Decisions & Actions
                 if threat.level != 'LOW' or level_changed:
-                    actions = self.decision_engine.decide(threat, self.current_sensitivity)
+                    actions = self.decision_engine.decide(threat)
                     self.defense_service.execute_actions(actions, threat.level)
                     
                     # Log significant events
@@ -473,17 +440,8 @@ class MonitoringService:
                 if self.socketio:
                     self.socketio.emit('frame_update', self.get_feed())
                     
-                # Adaptive Resource Management
-                if len(active_tracks) == 0:
-                    # No one is detected: conserve resources (10 FPS, slower OCR)
-                    adaptive_sleep = 0.1
-                    ocr_interval = base_ocr_interval * 2.0
-                else:
-                    # Observers present: ramp up compute (target FPS, normal OCR)
-                    adaptive_sleep = 1.0 / max(target_fps, 5)
-                    ocr_interval = base_ocr_interval
-                    
-                self.socketio.sleep(adaptive_sleep)
+                # Throttle loop to ~30 FPS
+                self.socketio.sleep(0.03)
                 
             except Exception as e:
                 logger.error(f"Error in monitoring loop: {e}")

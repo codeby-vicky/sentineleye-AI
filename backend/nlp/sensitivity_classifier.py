@@ -26,27 +26,33 @@ class SensitivityClassifier:
         # Define reference sentences for each category
         self.categories = {
             'safe': [
-                "YouTube videos, movies, games, and entertainment",
-                "Spotify music playlists and audio streaming",
-                "casual browsing, social media scrolling, and Reddit",
-                "general knowledge Wikipedia article and weather forecast",
-                "public news article and reading"
+                "programming tutorial and educational content",
+                "public news article and weather forecast",
+                "open source framework documentation",
+                "general knowledge Wikipedia article",
+                "how to fix a bug stackoverflow discussion"
             ],
-            'medium': [
-                "programming tutorial and technical documentation",
-                "VS Code, PyCharm, or IntelliJ IDE coding session",
-                "stack overflow debugging and software development",
-                "college assignments and general emails",
-                "casual emails and communication"
+            'personal': [
+                "personal resume with contact information and work experience",
+                "private email correspondence with a friend",
+                "personal health and medical records",
+                "social media private messages and chats",
+                "personal diary and journal entries"
+            ],
+            'confidential': [
+                "API keys, authentication tokens and secret credentials",
+                "internal company project documentation and architecture",
+                "source code with proprietary algorithms and business logic",
+                "employee performance review and feedback",
+                "trade secrets and unreleased product features"
             ],
             'highly_confidential': [
-                "ChatGPT, Gemini, Antigravity, or Claude AI chat interface",
                 "bank account statement with balance and transaction history",
                 "salary payroll spreadsheet and compensation details",
+                "social security number and personal identification",
+                "credit card numbers and CVV codes",
                 "password manager vault with login credentials",
-                "confidential company projects, resume, and CV",
-                "API keys, authentication tokens and secret credentials",
-                "social security number and personal identification"
+                "tax returns and financial statements"
             ]
         }
         
@@ -58,12 +64,9 @@ class SensitivityClassifier:
         # Fast-path keyword matching for robustness
         self.critical_keywords = [
             "chatgpt", "gemini", "antigravity", "claude", "openai", "copilot", 
+            "vs code", "vscode", "pycharm", "intellij", "studio", "github", 
             "confidential", "bank", "financial", "salary", "ssn", "password", 
-            "secret", "api key", "resume", "cv", "credit card"
-        ]
-        
-        self.medium_keywords = [
-            "vs code", "vscode", "pycharm", "intellij", "studio", "github", "stack overflow"
+            "secret", "api key", "resume", "cv "
         ]
         
     def _check_keywords(self, text: str) -> str:
@@ -71,9 +74,6 @@ class SensitivityClassifier:
         for kw in self.critical_keywords:
             if kw in text_lower:
                 return "highly_confidential"
-        for kw in self.medium_keywords:
-            if kw in text_lower:
-                return "medium"
         return "unknown"
             
     def classify(self, text: str, window_title: str = "") -> SensitivityResult:
@@ -91,14 +91,7 @@ class SensitivityClassifier:
             return SensitivityResult(
                 category="highly_confidential",
                 confidence=1.0,
-                reason="High-privacy keyword detected (e.g. AI chat, financial, or confidential document).",
-                document_type=window_title
-            )
-        elif keyword_result == "medium":
-            return SensitivityResult(
-                category="medium",
-                confidence=1.0,
-                reason="Medium-privacy keyword detected (e.g. coding IDE, technical docs).",
+                reason="High-privacy keyword detected (e.g. AI chat, IDE, financial, or confidential document).",
                 document_type=window_title
             )
             
@@ -126,9 +119,10 @@ class SensitivityClassifier:
                 
         # Generate a simple reason
         reason_map = {
-            'safe': "Content appears to be general, public, or entertainment.",
-            'medium': "Content appears to be technical, coding, or work-related.",
-            'highly_confidential': "Content contains highly sensitive financial, medical, AI chat, or security data."
+            'safe': "Content appears to be general, public, or educational.",
+            'personal': "Content contains personal identifying information or private communications.",
+            'confidential': "Content contains proprietary code, internal documents, or credentials.",
+            'highly_confidential': "Content contains highly sensitive financial, medical, or security data."
         }
         
         reason = reason_map.get(best_category, "")

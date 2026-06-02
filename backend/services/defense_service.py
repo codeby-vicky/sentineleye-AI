@@ -25,8 +25,8 @@ class DefenseService:
         if 'blur' in action_types:
             blur_action = next(a for a in actions if a.action_type == 'blur')
             intensity = blur_action.parameters.get('intensity', 'partial')
-            # We force full-screen blur by passing bounds=None instead of active window bounds
-            self.screen_blur.activate(intensity, bounds=None)
+            bounds = self.window_manager.get_active_window_bounds()
+            self.screen_blur.activate(intensity, bounds)
         else:
             self.screen_blur.deactivate()
             

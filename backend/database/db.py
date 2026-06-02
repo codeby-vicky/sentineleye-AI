@@ -154,7 +154,13 @@ class DatabaseManager:
             row = cursor.fetchone()
             if row:
                 d = dict(row)
-                d['face_embedding'] = bytes_to_numpy(d['face_embedding'])
+                embedding = bytes_to_numpy(d['face_embedding'])
+                if embedding is None:
+                    logger.error("Owner embedding corrupted - re-registration required")
+                    # We return the owner dict but with None embedding
+                    d['face_embedding'] = None
+                else:
+                    d['face_embedding'] = embedding
                 return d
             return None
 

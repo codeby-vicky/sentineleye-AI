@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Notification, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Notification } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const http = require('http');
@@ -12,9 +12,6 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 }
-
-// Required for Native Windows Toast Notifications
-app.setAppUserModelId('SentinelEye.Privacy.AI');
 
 // RTX 2050 4GB VRAM constraint optimizations
 app.commandLine.appendSwitch('enable-low-end-device-mode'); // Optimizes tile memory and rasterization
@@ -90,29 +87,24 @@ function createWindows() {
     }
   });
 
-    // Blur Overlay Window (initially hidden, transparent)
-    blurWindow = new BrowserWindow({
-      width: 800,
-      height: 600,
-      frame: false,
-      transparent: true,
-      alwaysOnTop: true,
-      show: false,
-      skipTaskbar: true,
-      focusable: false, // CRITICAL: Prevent OS from stealing focus
-      webPreferences: {
-        nodeIntegration: true, // Required for WebRTC desktop capture
-        contextIsolation: false // Required for direct require('electron') in HTML
-      }
-    });
-    
-    // CRITICAL: Hide blur window from screen capture so it can capture the desktop behind it
-    blurWindow.setContentProtection(true);
+  // Blur Overlay Window (initially hidden, transparent)
+  blurWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    show: false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'blur-preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
   
-  // CRITICAL: Let clicks pass through to the protected app beneath
-  blurWindow.setIgnoreMouseEvents(true, { forward: true });
+  blurWindow.setIgnoreMouseEvents(false);
   blurWindow.maximize();
-  blurWindow.setAlwaysOnTop(true, "screen-saver"); // Forces overlay above even full-screen apps
   blurWindow.loadFile('blur-overlay.html');
 
   // Load main UI
@@ -134,18 +126,6 @@ function createWindows() {
     }
   });
   ipcMain.handle('window-close', () => mainWindow.close());
-  
-  // Provide desktop source ID to renderer for WebRTC stream
-  ipcMain.handle('get-desktop-source-id', async () => {
-    try {
-      const sources = await desktopCapturer.getSources({ types: ['screen'] });
-      // Usually screen 1 is sources[0], but we can return the first screen found
-      return sources[0].id;
-    } catch (e) {
-      console.error('Failed to get desktop sources:', e);
-      return null;
-    }
-  });
   
   ipcMain.handle('lock-workstation', () => {
     if (process.platform === 'win32') {
@@ -172,12 +152,8 @@ function createWindows() {
         blurWindow.maximize();
       }
       
-      // Pass the bounds to renderer so it can perfectly align the WebRTC video margin
-      blurWindow.webContents.send('set-intensity', { intensity: intensity || 'partial', bounds: bounds });
-      
-      if (!blurWindow.isVisible()) {
-        blurWindow.showInactive(); // Use showInactive to prevent stealing foreground focus
-      }
+      blurWindow.webContents.send('set-intensity', intensity || 'partial');
+      blurWindow.show();
     }
   });
 

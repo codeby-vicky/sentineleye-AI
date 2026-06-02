@@ -20,7 +20,7 @@ class FaceRecognizer:
             return
             
         logger.info("Initializing Face Recognizer...")
-        self.threshold = 0.65  # Increased from 0.6 for better tolerance of head turns
+        self.threshold = Config.FACE_RECOGNITION_THRESHOLD
         self.owner = None
         self.reload_embeddings()
         self._initialized = True
@@ -29,6 +29,9 @@ class FaceRecognizer:
         """Reload all embeddings from the database."""
         logger.info("Reloading face embeddings from database...")
         self.owner = db.get_owner()
+        if self.owner and self.owner.get('face_embedding') is None:
+            logger.warning("Owner loaded but embedding is None (likely corrupted). Acting as if no owner exists.")
+            self.owner = None
         logger.info(f"Loaded owner: {'Yes' if self.owner else 'No'}")
 
     def _get_embedding(self, frame: np.ndarray, bbox: Optional[Tuple[int, int, int, int]] = None) -> Optional[np.ndarray]:
