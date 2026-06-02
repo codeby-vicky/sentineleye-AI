@@ -61,19 +61,48 @@ def capture_angle():
         return jsonify({'success': False, 'message': f'Failed to initialize models: {str(e)}'}), 500
     
     frames = []
+    issues = set()
     # Capture up to 3 good quality frames for this angle
     for _ in range(15):
         frame = cam.read_frame()
         if frame is not None:
+            # 1. Check Brightness (too dark or overexposed)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            brightness = np.mean(gray)
+            if brightness < 40:
+                issues.add("Too dark")
+                continue
+            if brightness > 240:
+                issues.add("Too bright/overexposed")
+                continue
+                
+            # 2. Check Motion Blur (Laplacian variance)
+            laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+            if laplacian_var < 100:  # Threshold for blurriness
+                issues.add("Face blurred or moving too fast")
+                continue
+                
             faces = face_detector.detect(frame)
             if faces:
+                best_face = max(faces, key=lambda f: f.bbox[2] * f.bbox[3])
+                # 3. Check Confidence and Size
+                if best_face.confidence < 0.6:
+                    issues.add("Face not clear enough (low confidence)")
+                    continue
+                if best_face.bbox[2] < 50 or best_face.bbox[3] < 50:
+                    issues.add("Face too far/small")
+                    continue
+                    
                 frames.append(frame)
                 if len(frames) == 3:
                     break
         time.sleep(0.1)
         
     if len(frames) < 3:
-        return jsonify({'success': False, 'message': f'Could not capture {angle} angle clearly.'}), 400
+        error_msg = f'Could not capture {angle} angle clearly.'
+        if issues:
+            error_msg += ' Issues: ' + ', '.join(issues)
+        return jsonify({'success': False, 'message': error_msg}), 400
         
     if name not in registration_cache:
         registration_cache[name] = []

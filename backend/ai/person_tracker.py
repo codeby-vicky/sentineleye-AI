@@ -20,6 +20,7 @@ class TrackedPerson:
     is_active: bool = True
     missed_frames: int = 0
     holding_phone: bool = False
+    last_owner_time: float = 0.0
     
     @property
     def avg_gaze_score(self) -> float:
@@ -96,30 +97,29 @@ class PersonTracker:
                 if 'holding_phone' in det:
                     track.holding_phone = det['holding_phone']
                     
-                # Temporal smoothing for identity (mode voting + Owner Persistence Bias)
-                track.identity_history.append((det['identity'], det['type']))
-                from collections import Counter
-                
-                if track.identity_history:
-                    # Count occurrences of 'owner' type
-                    owner_count = sum(1 for id_tuple in track.identity_history if id_tuple[1] == 'owner')
-                    total_history = len(track.identity_history)
-                    
-                    # Owner Persistence Bias: if at least 15% of the history says it's the owner, 
-                    # we lock it to owner. This prevents the identity from flickering to "Unknown" 
-                    # when the owner simply turns their head or looks away temporarily.
-                    if owner_count >= total_history * 0.15:
-                        owner_names = [id_tuple[0] for id_tuple in track.identity_history if id_tuple[1] == 'owner']
-                        track.identity = owner_names[0] if owner_names else 'Owner'
-                        track.identity_type = 'owner'
-                    else:
+                # Update owner timestamp if identified as owner this frame
+                if det['type'] == 'owner':
+                    track.last_owner_time = current_time
+
+                # Absolute Owner Temporal Persistence (5 seconds)
+                # If we were extremely confident this track is the owner within the last 5 seconds,
+                # we forcefully anchor the identity to 'Owner'. This completely eliminates UI flickering
+                # when the user turns their head or momentarily obscures their face.
+                if current_time - track.last_owner_time <= 5.0:
+                    track.identity = 'Owner'
+                    track.identity_type = 'owner'
+                else:
+                    # fallback to history voting for other types
+                    track.identity_history.append((det['identity'], det['type']))
+                    from collections import Counter
+                    if track.identity_history:
                         counts = Counter(track.identity_history)
                         most_common = counts.most_common(1)[0][0]
                         track.identity = most_common[0]
                         track.identity_type = most_common[1]
-                else:
-                    track.identity = det['identity']
-                    track.identity_type = det['type']
+                    else:
+                        track.identity = det['identity']
+                        track.identity_type = det['type']
                     
                 x, y, w, h = det['bbox']
                 centroid = (x + w//2, y + h//2)
@@ -139,8 +139,11 @@ class PersonTracker:
                 bbox=det['bbox'],
                 first_seen=current_time,
                 last_seen=current_time,
-                holding_phone=det.get('holding_phone', False)
+                holding_phone=det.get('holding_phone', False),
+                last_owner_time=current_time if det['type'] == 'owner' else 0.0
             )
+            track_id = self.next_id
+            
             new_track.identity_history.append((det['identity'], det['type']))
             if 'gaze_score' in det and det['gaze_score'] is not None:
                 new_track.gaze_history.append(det['gaze_score'])

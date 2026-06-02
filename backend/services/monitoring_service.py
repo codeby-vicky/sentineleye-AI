@@ -428,6 +428,16 @@ class MonitoringService:
                 else:
                     new_level = 'LOW'
                     
+                # Threat Hysteresis (Smoothing)
+                # Maintain elevated threat state for 3 seconds to prevent UI/blur flickering
+                if new_level != 'LOW':
+                    self.last_elevated_threat_time = current_time
+                    self.elevated_threat_level = new_level
+                else:
+                    if current_time - getattr(self, 'last_elevated_threat_time', 0.0) < 3.0:
+                        new_level = getattr(self, 'elevated_threat_level', 'LOW')
+                        threat.level = new_level
+                    
                 level_changed = new_level != self.current_threat_level
                 self.current_threat_level = new_level
                 
