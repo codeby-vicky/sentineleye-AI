@@ -9,6 +9,10 @@ class ObserverData:
     gaze_score: float
     persistence_seconds: float
     behavior_score: float
+    phone_risk: str = 'none'  # 'none', 'low', 'medium', 'high'
+    face_area_ratio: float = 0.0  # ratio of this face area to owner face area (1.0 = same size)
+    relative_position: str = 'unknown'  # 'behind', 'beside', 'front', 'unknown'
+    is_approaching: bool = False
 
 @dataclass
 class ThreatResult:
@@ -16,6 +20,7 @@ class ThreatResult:
     level: str
     reason: str
     contributing_factors: List[str]
+    phone_detected: bool = False
 
 class ThreatCalculator:
     def __init__(self):
@@ -45,7 +50,6 @@ class ThreatCalculator:
         settings = db.get_all_settings()
         privacy_mode = settings.get('privacy_sensitivity', 'medium')
         
-        # Adjust screen sensitivity score based on privacy mode
         if privacy_mode == 'aggressive':
             sens_score = max(sens_score + 0.3, 1.0)
         elif privacy_mode == 'low':
@@ -60,34 +64,66 @@ class ThreatCalculator:
             identity_scores = {'owner': 0.0, 'unknown': 1.0, 'crossing': 1.0}
             id_score = identity_scores.get(obs.identity_type, 1.0)
             
-            # Gaze Score (already 0.0 to 1.0)
+            # Gaze Score
             g_score = obs.gaze_score
             
             # Persistence Score (normalize to 1.0 at 30 seconds)
             p_score = min(obs.persistence_seconds / 30.0, 1.0)
             
-            # Weighted sum for this observer
+            # Behavior score
+            b_score = obs.behavior_score
+            
+            # Face area ratio modifier — smaller face = farther away
+            distance_modifier = 1.0
+            if obs.face_area_ratio > 0:
+                if obs.face_area_ratio < 0.3:
+                    # Very far away — reduce threat
+                    distance_modifier = 0.6
+                elif obs.face_area_ratio < 0.5:
+                    # Moderately far — slight reduction
+                    distance_modifier = 0.8
+                elif obs.face_area_ratio > 0.8:
+                    # Very close — increase threat
+                    distance_modifier = 1.2
+            
+            # Position modifier
+            position_modifier = 1.0
+            if obs.relative_position == 'behind':
+                position_modifier = 1.3  # Behind is more threatening
+                factors.append("Observer positioned behind owner")
+            
+            # Approach modifier
+            if obs.is_approaching:
+                position_modifier *= 1.2
+                factors.append("Observer approaching")
+            
+            # Weighted sum
             obs_threat = (
                 self.weights['observer_identity'] * id_score +
                 self.weights['gaze_toward_screen'] * g_score +
                 self.weights['persistence_duration'] * p_score +
-                self.weights['behavior_anomaly'] * obs.behavior_score +
+                self.weights['behavior_anomaly'] * b_score +
                 self.weights['screen_sensitivity'] * sens_score
             )
+            
+            # Apply modifiers
+            obs_threat *= distance_modifier * position_modifier
             
             # Multipliers
             if obs.identity_type == 'crossing':
                 obs_threat *= Config.CROSSING_DISCOUNT
             elif obs.identity_type == 'owner':
-                obs_threat = 0.0  # Owner is never a threat
+                obs_threat = 0.0
                 
             if obs_threat > max_observer_threat:
                 max_observer_threat = obs_threat
                 primary_reason = f"{obs.identity_type.capitalize()} observer + {screen_sensitivity} content"
                 if g_score > 0.6:
                     primary_reason += " + sustained gaze"
+                if obs.relative_position == 'behind':
+                    primary_reason += " + behind owner"
                     
-        # Apply multi-observer multiplier
+        # Multi-observer multiplier
         observer_count = len([o for o in observers if o.identity_type != 'owner'])
         if observer_count > 1:
             multiplier = 1.0 + 0.2 * (observer_count - 1)
@@ -100,7 +136,6 @@ class ThreatCalculator:
         # Smart Privacy Blur Logic
         for obs in observers:
             if obs.identity_type == 'unknown':
-                # Check for strict blur triggers
                 facing_screen = obs.gaze_score > 0.6
                 standing_long_enough = obs.persistence_seconds > 2.0
                 

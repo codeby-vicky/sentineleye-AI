@@ -35,32 +35,32 @@
         }
 
         #blur-layer.active-partial {
-            backdrop-filter: blur(15px);
-            background-color: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(30px) saturate(0.5);
+            background-color: rgba(15, 23, 42, 0.65);
             opacity: 1;
+            pointer-events: all;
         }
 
         #blur-layer.active-full {
-            backdrop-filter: blur(40px);
-            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(60px) saturate(0.2) brightness(0.3);
+            background-color: rgba(15, 23, 42, 0.92);
             opacity: 1;
+            pointer-events: all;
         }
 
-        .alert-box {
-            background: rgba(0, 0, 0, 0.7);
-            border: 1px solid rgba(255, 60, 60, 0.5);
-            padding: 2rem 4rem;
-            border-radius: 12px;
+        .alert-box { 
+            background: rgba(10, 15, 30, 0.85);
+            border: 2px solid rgba(239, 68, 68, 0.6);
+            padding: 40px 60px;
+            border-radius: 16px;
             color: white;
             font-family: 'Inter', -apple-system, sans-serif;
             text-align: center;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 60, 60, 0.2);
-            color: white;
-            box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
+            box-shadow: 0 0 60px rgba(239, 68, 68, 0.25), 0 0 120px rgba(239, 68, 68, 0.1), inset 0 1px 0 rgba(255,255,255,0.05);
             transform: scale(0.9);
             opacity: 0;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            transition-delay: 0.2s;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition-delay: 0.25s;
         }
 
         #blur-layer.active-partial .alert-box,
@@ -70,10 +70,12 @@
         }
 
         .alert-box h1 {
-            margin: 10px 0 5px 0;
-            font-size: 28px;
-            letter-spacing: 2px;
+            margin: 16px 0 8px 0;
+            font-size: 32px;
+            letter-spacing: 4px;
+            font-weight: 700;
             color: #ef4444;
+            text-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
         }
 
         .alert-box p {
@@ -93,12 +95,13 @@
     <div id="blur-container">
         <div id="blur-layer">
             <div class="alert-box">
-                <svg viewBox="0 0 24 24" width="48" height="48" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <svg viewBox="0 0 24 24" width="64" height="64" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
                     <line x1="1" y1="1" x2="23" y2="23"></line>
                 </svg>
                 <h1>SCREEN PROTECTED</h1>
                 <p>Unauthorized observer detected</p>
+                <p style="margin-top: 12px; font-size: 14px; color: #475569; letter-spacing: 1px;">Privacy Shield Active</p>
                 <p class="esc-hint">Press ESC to dismiss temporarily</p>
             </div>
         </div>
