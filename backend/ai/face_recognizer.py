@@ -25,18 +25,29 @@ class FaceRecognizer:
         self._fallback_threshold = Config.FACE_RECOGNITION_THRESHOLD
         self._insightface_threshold = Config.INSIGHTFACE_THRESHOLD
         
-        # Try InsightFace first (better accuracy, GPU-accelerated)
+        # Try InsightFace first (better accuracy, GPU-accelerated if available)
         try:
             import insightface
             from insightface.app import FaceAnalysis
+            import onnxruntime
             logger.info("Loading InsightFace buffalo_l model...")
+            
+            # Detect available providers
+            available = onnxruntime.get_available_providers()
+            if 'CUDAExecutionProvider' in available:
+                providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                provider_label = 'GPU (CUDA)'
+            else:
+                providers = ['CPUExecutionProvider']
+                provider_label = 'CPU'
+            
             self._insightface_app = FaceAnalysis(
                 name=Config.INSIGHTFACE_MODEL,
-                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+                providers=providers
             )
             self._insightface_app.prepare(ctx_id=0, det_size=(640, 640))
             self._use_insightface = True
-            logger.info("InsightFace initialized successfully (GPU-accelerated)")
+            logger.info(f"InsightFace initialized successfully on {provider_label}")
         except Exception as e:
             logger.warning(f"InsightFace not available ({e}), falling back to face_recognition (dlib)")
             self._use_insightface = False

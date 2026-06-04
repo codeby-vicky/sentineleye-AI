@@ -91,6 +91,11 @@ class MonitoringService:
         self._owner_face_area = 0
         self._owner_person_bbox = None
         
+        # Defense state tracking — prevents spam
+        self._last_defense_level = 'LOW'
+        self._last_event_log_time = 0
+        self._event_log_cooldown = 10.0  # Seconds between event logs
+        
         # MediaPipe imports cached
         self._mp_face_mesh = None
         self._mp_connections = None
@@ -189,6 +194,10 @@ class MonitoringService:
         self._cached_gaze_results = {}
         self._owner_face_area = 0
         self._owner_person_bbox = None
+        self._last_defense_level = 'LOW'
+        self._last_event_log_time = 0
+        self.current_threat_score = 0.0
+        self.current_threat_level = 'LOW'
             
         self.thread = self.socketio.start_background_task(self._monitoring_loop)
         
@@ -209,7 +218,9 @@ class MonitoringService:
         self.camera.release()
         
         if self.defense_service:
-            self.defense_service.execute_actions([]) # Clear defenses
+            self.defense_service.execute_actions([], 'LOW')  # Clear defenses
+            self.defense_service.alert_manager.clear_state()
+            self.defense_service.screen_blur.reset()
             
         # Save session stats
         avg_score = self.stats['sum_threat_score'] / max(1, self.stats['threat_updates'])
@@ -481,6 +492,7 @@ class MonitoringService:
                 
                 # ================================================================
                 # STAGE 7: Build Observer Data with relative positioning
+                # Minimum persistence filter: unknowns must exist 2+ seconds
                 # ================================================================
                 self.last_detections = []
                 observer_data_list = []
@@ -494,6 +506,11 @@ class MonitoringService:
                         'gaze_score': t.avg_gaze_score,
                         'persistence': t.persistence_seconds
                     })
+                    
+                    # CRITICAL: Skip unknown observers with < 2s persistence for threat scoring
+                    # This prevents false "Unknown Person Standing Behind" from brief detections
+                    if t.identity_type in ('unknown', 'crossing') and t.persistence_seconds < 2.0:
+                        continue
                     
                     behavior_score = self.behavior_analyzer.analyze(t)
                     
@@ -603,29 +620,49 @@ class MonitoringService:
                 self.stats['threat_updates'] += 1
                 
                 # ================================================================
-                # STAGE 11: Defense Actions
+                # STAGE 11: Defense Actions — STATE CHANGE ONLY
+                # Only trigger defense when threat level changes
                 # ================================================================
-                if threat.level != 'LOW' or level_changed:
-                    actions = self.decision_engine.decide(threat)
-                    self.defense_service.execute_actions(actions, threat.level)
+                if level_changed:
+                    # Use smoothed level for defense decisions
+                    from risk_engine.threat_calculator import ThreatResult
+                    smoothed_threat = ThreatResult(
+                        score=self.current_threat_score,
+                        level=new_level,
+                        reason=threat.reason,
+                        contributing_factors=threat.contributing_factors,
+                        phone_detected=threat.phone_detected
+                    )
                     
-                    if threat.level in ['HIGH', 'CRITICAL']:
+                    if new_level == 'LOW':
+                        # Transitioning to safe — clear defenses
+                        self.defense_service.execute_actions([], 'LOW')
+                    else:
+                        actions = self.decision_engine.decide(smoothed_threat)
+                        self.defense_service.execute_actions(actions, new_level)
+                    
+                    self._last_defense_level = new_level
+                    
+                    # Log event with cooldown
+                    if new_level in ('HIGH', 'CRITICAL'):
                         self.stats['high_risk_count'] += 1
                         
-                        highest_obs = max(observer_data_list, key=lambda x: x.gaze_score * x.persistence_seconds, default=None)
-                        
-                        event_data = {
-                            'observer_type': highest_obs.identity_type if highest_obs else 'unknown',
-                            'observer_name': highest_obs.identity if highest_obs else 'Unknown',
-                            'gaze_score': highest_obs.gaze_score if highest_obs else 0.0,
-                            'persistence_seconds': highest_obs.persistence_seconds if highest_obs else 0.0,
-                            'screen_sensitivity': self.current_sensitivity,
-                            'threat_score': round(self.current_threat_score, 1),
-                            'threat_level': threat.level,
-                            'action_taken': ",".join([a.action_type for a in actions]),
-                            'reason': threat.reason
-                        }
-                        db.log_event(self.session_id, event_data)
+                        if (current_time - self._last_event_log_time) >= self._event_log_cooldown:
+                            self._last_event_log_time = current_time
+                            highest_obs = max(observer_data_list, key=lambda x: x.gaze_score * x.persistence_seconds, default=None)
+                            
+                            event_data = {
+                                'observer_type': highest_obs.identity_type if highest_obs else 'unknown',
+                                'observer_name': highest_obs.identity if highest_obs else 'Unknown',
+                                'gaze_score': highest_obs.gaze_score if highest_obs else 0.0,
+                                'persistence_seconds': highest_obs.persistence_seconds if highest_obs else 0.0,
+                                'screen_sensitivity': self.current_sensitivity,
+                                'threat_score': round(self.current_threat_score, 1),
+                                'threat_level': new_level,
+                                'action_taken': ",".join([a.action_type for a in actions]),
+                                'reason': threat.reason
+                            }
+                            db.log_event(self.session_id, event_data)
                         
                 # ================================================================
                 # STAGE 12: Emit Frame

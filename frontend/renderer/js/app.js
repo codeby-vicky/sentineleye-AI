@@ -26,8 +26,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
     
+    // Notification state for cooldown
+    let lastThreatNotifyTime = 0;
+    let lastThreatLevel = 'LOW';
+    const NOTIFY_COOLDOWN_MS = 10000; // 10 seconds
+
     // Register socket global defense listener
     window.socketService.on('threat_detected', (data) => {
+        const now = Date.now();
+        const levelChanged = data.level !== lastThreatLevel;
+        const cooldownExpired = (now - lastThreatNotifyTime) >= NOTIFY_COOLDOWN_MS;
+        
+        lastThreatLevel = data.level;
+        
+        // Only notify on level change or after cooldown
+        if (!levelChanged && !cooldownExpired) return;
+        
+        lastThreatNotifyTime = now;
+        
         if (data.play_sound) {
             let soundType = 'alert';
             if (data.level === 'HIGH') soundType = 'warning';
@@ -35,22 +51,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.system.playSound(soundType);
         }
         
-        // Use native Windows notification instead of in-app toast
+        // Use native Windows notification
         if (window.system.showNotification) {
             window.system.showNotification(`${data.level} Threat`, data.reason);
         } else {
             window.notify.warning(`${data.level} Threat: ${data.reason}`, 'Security Alert');
+        }
+        
+        // Limit active toasts to 3
+        const container = document.getElementById('toast-container');
+        if (container) {
+            while (container.children.length > 3) {
+                container.removeChild(container.firstChild);
+            }
         }
     });
 
     window.socketService.on('defense_activated', (data) => {
         if (data.action === 'blur_show') {
             window.system.showBlurOverlay(data.intensity, data.bounds);
-            // Don't spam notifications for blur unless it's new
-            if (window.system.showNotification) {
-                // We'll let the threat alert handle the notification to avoid spam, but we can log it internally
-                window.notify.info(`Privacy screen activated`, 'Defense Protocol');
-            }
+            // NO notification for blur — the threat_detected event already handles it
         } else if (data.action === 'blur_hide') {
             window.system.hideBlurOverlay();
         }

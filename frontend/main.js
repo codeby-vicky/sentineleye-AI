@@ -174,8 +174,8 @@ function createWindows() {
   ipcMain.handle('show-notification', (event, data) => {
     const { title, body } = data;
     const now = Date.now();
-    // 5 second cooldown per unique title
-    if (!notificationCooldowns[title] || (now - notificationCooldowns[title]) > 5000) {
+    // 10 second cooldown per unique title
+    if (!notificationCooldowns[title] || (now - notificationCooldowns[title]) > 10000) {
         new Notification({ title, body, silent: true }).show();
         notificationCooldowns[title] = now;
     }
