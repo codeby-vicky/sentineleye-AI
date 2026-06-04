@@ -128,8 +128,10 @@ function createWindows() {
   ipcMain.handle('window-close', () => mainWindow.close());
   
   ipcMain.handle('lock-workstation', () => {
+    // Display sleep instead of workstation lock — preserves owner workflow
     if (process.platform === 'win32') {
-      exec('rundll32.exe user32.dll,LockWorkStation');
+      // SC_MONITORPOWER via nircmd (fallback: powershell)
+      exec('powershell -Command "(Add-Type -MemberDefinition \\"[DllImport(\\\\\\\"user32.dll\\\\\\\")]public static extern int SendMessage(int hWnd, int hMsg, int wParam, int lParam);\\" -Name a -Namespace b -PassThru)::SendMessage(-1,0x0112,0xF170,2)"');
     }
   });
 

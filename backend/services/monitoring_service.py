@@ -96,6 +96,12 @@ class MonitoringService:
         self._last_event_log_time = 0
         self._event_log_cooldown = 10.0  # Seconds between event logs
         
+        # Memory management
+        self._last_cache_cleanup = 0
+        self._cache_cleanup_interval = 5.0  # Clean identity cache every 5s
+        self._max_identity_cache_size = 50
+        self._frame_emit_interval = 3  # Only emit frames to UI every Nth frame
+        
         # MediaPipe imports cached
         self._mp_face_mesh = None
         self._mp_connections = None
@@ -196,6 +202,7 @@ class MonitoringService:
         self._owner_person_bbox = None
         self._last_defense_level = 'LOW'
         self._last_event_log_time = 0
+        self._last_cache_cleanup = 0
         self.current_threat_score = 0.0
         self.current_threat_level = 'LOW'
             
@@ -665,9 +672,21 @@ class MonitoringService:
                             db.log_event(self.session_id, event_data)
                         
                 # ================================================================
-                # STAGE 12: Emit Frame
+                # STAGE 12: Periodic Cache Cleanup (prevents memory leaks)
                 # ================================================================
-                if self.socketio:
+                if current_time - self._last_cache_cleanup > self._cache_cleanup_interval:
+                    self._last_cache_cleanup = current_time
+                    # Trim identity cache to prevent unbounded growth
+                    if len(self._cached_identities) > self._max_identity_cache_size:
+                        self._cached_identities.clear()
+                    # Reset frame counter to prevent overflow
+                    if self._frame_count > 100000:
+                        self._frame_count = 0
+                
+                # ================================================================
+                # STAGE 13: Emit Frame (throttled to reduce WebSocket + base64 overhead)
+                # ================================================================
+                if self.socketio and self._frame_count % self._frame_emit_interval == 0:
                     self.socketio.emit('frame_update', self.get_feed())
                     
                 # Throttle to ~30 FPS

@@ -53,6 +53,34 @@ class Config:
     SCHEDULE_OCR = 150           # Every 150 frames (~5s)
     SCHEDULE_NLP = 300           # Every 300 frames (~10s)
     
+    # Performance profiles
+    PERFORMANCE_PROFILES = {
+        'low': {
+            'schedule_yolo': 6,
+            'schedule_face_recognize': 10,
+            'ocr_interval': 15,
+            'camera_resolution': (1280, 720),
+            'frame_emit_interval': 5,
+            'yolo_imgsz': 320,
+        },
+        'balanced': {
+            'schedule_yolo': 3,
+            'schedule_face_recognize': 5,
+            'ocr_interval': 5,
+            'camera_resolution': (1920, 1080),
+            'frame_emit_interval': 3,
+            'yolo_imgsz': 480,
+        },
+        'high': {
+            'schedule_yolo': 2,
+            'schedule_face_recognize': 3,
+            'ocr_interval': 3,
+            'camera_resolution': (1920, 1080),
+            'frame_emit_interval': 2,
+            'yolo_imgsz': 640,
+        }
+    }
+    
     # Project paths
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.join(BASE_DIR, 'data')

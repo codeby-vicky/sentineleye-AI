@@ -56,11 +56,15 @@ class ObjectDetector:
 
         try:
             # Use classes filter to only detect person (0) and phone (67)
+            # half=True enables FP16 for GPU, imgsz reduces inference resolution
+            use_half = (self._device != 'cpu')
             results = self.model(
                 frame, 
                 device=self._device, 
                 verbose=False, 
                 conf=0.25,
+                half=use_half,
+                imgsz=480,
                 classes=[self.PERSON_CLASS, self.PHONE_CLASS]
             )
             
